@@ -39,8 +39,6 @@ import socket
 ################################################################################
 
 URL = "http://ndncert.named-data.net"
-REPO_HOST = "localhost"
-REPO_PORT = 7376
 
 ################################################################################
 ################################################################################
@@ -179,14 +177,44 @@ class Signer(object):
         return cert.rstrip()
 
     def publishCertificate(self, certificate):
-        try:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.connect((REPO_HOST, int(REPO_PORT)))
+        # block = ndn.Block(base64.b64decode(certificate))
+        data = ndn.Data()
+        data.wireDecode(ndn.Blob(buffer(base64.b64decode(certificate))))
 
-            sock.send(base64.b64decode(certificate))
-        except Exception,e:
-            print e
-            print "ERROR: an error occurred while publishing certificate"
+        updateName = ndn.Name(self.site_prefix) \
+            .append("NDNS") \
+            .append(data.wireEncode()) \
+            .append("UPDATE")
+
+        self.face = ndn.Face()
+        
+        self.waiting = True
+        self.sendUpdate(updateName)
+                
+        while self.waiting:
+            self.face.processEvents()
+            time.sleep(0.01)
+            
+        self.face.shutdown()
+       
+    def sendUpdate(self, interestOrName):
+        self.face.expressInterest(interestOrName, self.onData, self.onTimeout)
+        
+    def onData(self, interest, data):
+        # TODO: check the result of response
+        print "Publishing succeeds: get response from NDNS name server"
+        self.waiting = False
+
+
+    def onTimeout(self, interest):
+        print "ERROR: error to publish certificate to NDNS. Update message timeout"
+        try:
+            if confirm("try to publish certificate again?", resp=False):
+                self.sendUpdate(interest)
+            else:
+                self.waiting = False
+        except RequestSkipped:
+            pass
 
 def confirm(prompt, resp):
     if resp:
