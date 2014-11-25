@@ -50,6 +50,7 @@ args = parser.parse_args()
 ################################################################################
 
 URL = "http://ndncert.named-data.net"
+PUBLISH_REPO = True
 REPO_HOST = "localhost"
 REPO_PORT = 7376
 
@@ -203,14 +204,47 @@ class Signer(object):
         return cert.rstrip()
 
     def publishCertificate(self, certificate):
-        try:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.connect((REPO_HOST, int(REPO_PORT)))
+        if PUBLISH_REPO:
+            try:
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.connect((REPO_HOST, int(REPO_PORT)))
 
-            sock.send(base64.b64decode(certificate))
-        except Exception as e:
-            print(e)
-            print("ERROR: an error occurred while publishing certificate")
+                sock.send(base64.b64decode(certificate))
+            except Exception as e:
+                print(e)
+                print("ERROR: an error occurred while publishing certificate")
+        else:
+            # block = ndn.Block(base64.b64decode(certificate))
+            data = ndn.Data()
+            data.wireDecode(ndn.Blob(base64.b64decode(certificate)))
+
+            updateName = ndn.Name(self.site_prefix) \
+                .append("NDNS") \
+                .append(data.wireEncode()) \
+                .append("UPDATE")
+
+            self.face = ndn.Face()
+
+            def onData(interest, data):
+                # TODO: check the result of response
+                print("Publishing succeeds: get response from NDNS name server")
+                self.waiting = False
+
+            def onTimeout(interest):
+                print("ERROR: error to publish certificate to NDNS. Update message timeout")
+                if confirm("try to publish certificate again?", resp=False):
+                    self.face.expressInterest(interest.getName(), onData, onTimeout)
+                else:
+                    self.waiting = False
+
+            self.waiting = True
+            self.face.expressInterest(updateName, onData, onTimeout)
+
+            while self.waiting:
+                self.face.processEvents()
+                time.sleep(0.01)
+
+            self.face.shutdown()
 
 def confirm(prompt, resp):
     if resp:
