@@ -358,8 +358,8 @@ def extract_cert_name(name):
     # remove two (or 3 in case of rejection) last components and remove "KEY" keyword at any position
     newname = ndn.Name()
     last = -2
-    if name[-1] == 'REVOKED':
-	last = -3
+    if str(name[-1]) == 'REVOKED':
+        last = -3
     for component in name[:last]:
         if str(component) != 'KEY':
             newname.append(component)
