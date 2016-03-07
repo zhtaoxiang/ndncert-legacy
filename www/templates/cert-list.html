@@ -22,13 +22,14 @@
     {% set site_name = current_site %}
     <thead>
     <tr>
-      <th colspan="3">{{ site_name }} ({{ cert.operator.site_prefix }})</td>
+      <th colspan="4">{{ site_name }} ({{ cert.operator.site_prefix }})</td>
     </tr>
     </thead>
     {% endif %}
 
     <tr class="{% if loop.index % 2 %}odd{% else %}even{% endif %}">
       <td>{{ cert.name }}</td>
+      <td nowrap>Expires {{ cert.to }}</td>
       <td><a href="{{ url_for("cert.get_certificate", name=cert.name, view=1) }}">View</a></td>
       <td><a href="{{ url_for("cert.get_certificate", name=cert.name) }}">Download</a></td>
     </tr>

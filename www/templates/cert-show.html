@@ -8,9 +8,48 @@
 
 {% block body %}
 
-<pre>
-{{ cert.cert }}
-</pre>
+<table class="item-list">
+    <thead>
+    <tr>
+      <th colspan="2">{{ cert.info.getName() }}</td>
+    </tr>
+    </thead>
+
+    <tr>
+      <td nowrap>Is valid:</td>
+      <td>{{ cert.isValid }}</td>
+    </tr>
+    <tr>
+      <td nowrap>Not before:</td>
+      <td>{{ cert.from }}</td>
+    </tr>
+    <tr>
+      <td nowrap>Not after:</td>
+      <td>{{ cert.to }}</td>
+    </tr>
+    <tr>
+      <td nowrap>Subject info</td>
+      <td>
+        <table style="margin: 0px">
+        {% for info in cert.info.getSubjectDescriptions() %}
+          {% if info.getValue().__str__() != "" %}
+        <tr>
+          <td width="1%" nowrap>{{ info.getOid() }}</td>
+          <td><b>{{ info.getValue() }}</b></td>
+        </tr>
+          {% endif %}
+        {% endfor %}
+        </table>
+      </td>
+    </tr>
+    <tr>
+      <td nowrap>Certificate</td>
+      <td><pre style="margin: 0px">{{ cert.cert }}</pre></td>
+    </tr>
+    <tr>
+      <td colspan="2"><a href="{{ url_for("cert.get_certificate", name=cert.info.getName()) }}">Download</a></td>
+    </tr>
+</table>
 
 {% endblock %}
 

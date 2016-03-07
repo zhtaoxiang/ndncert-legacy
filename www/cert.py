@@ -6,6 +6,8 @@ from bson.objectid import ObjectId
 import base64
 
 import pyndn as ndn
+import pyndn.security.certificate
+from datetime import datetime
 
 cert = Blueprint('cert', __name__, template_folder='templates')
 
@@ -29,6 +31,17 @@ def get_certificate():
         response.headers['Content-Disposition'] = 'attachment; filename=%s.ndncert' % str(ndn_name[-3])
         return response
     else:
+        d = ndn.security.certificate.IdentityCertificate()
+        d.wireDecode(bytearray(base64.b64decode(cert['cert'])))
+
+        notBefore = datetime.utcfromtimestamp(d.getNotBefore() / 1000)
+        notAfter = datetime.utcfromtimestamp(d.getNotAfter() / 1000)
+        cert['from'] = notBefore
+        cert['to'] = notAfter
+        now = datetime.now()
+        cert['isValid'] = (notBefore <= now and now <= notAfter)
+        cert['info'] = d
+
         return render_template('cert-show.html',
                                cert=cert, title=cert['name'])
 
@@ -45,8 +58,21 @@ def get_certificates():
 def list_certs_html():
     certs = current_app.mongo.db.certs.find({ '$query': {},
                                          '$orderby': { 'name' : 1, 'operator.site_prefix': 1 }})
+    certsWithInfo = []
+    for cert in certs:
+        info = cert
+        d = ndn.security.certificate.IdentityCertificate()
+        d.wireDecode(bytearray(base64.b64decode(cert['cert'])))
+
+        notBefore = datetime.utcfromtimestamp(d.getNotBefore() / 1000)
+        notAfter = datetime.utcfromtimestamp(d.getNotAfter() / 1000)
+        now = datetime.now()
+        if notBefore <= now and now <= notAfter:
+            info['to'] = notAfter.strftime('%Y-%m-%d')
+            certsWithInfo.append(info)
+
     return render_template('cert-list.html',
-                           certs=certs, title="List of issued certificates")
+                           certs=certsWithInfo, title="List of issued and not expired certificates")
 
 @cert.route('/cert/list/admin', methods = ['GET'])
 @auth.requires_auth
