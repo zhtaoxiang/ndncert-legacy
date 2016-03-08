@@ -34,6 +34,8 @@ import datetime
 import re
 import socket
 
+import pyndn.security
+
 ################################################################################
 ###                                CONFIG                                    ###
 ################################################################################
@@ -58,15 +60,14 @@ class Signer(object):
           .append(str(int(time.mktime(time.gmtime())))) \
           .append(self.site_prefix.wireEncode())
 
-        p = subprocess.Popen(["ndnsec-operator-tool", "sign"],
-                             stdin=subprocess.PIPE, stdout=subprocess.PIPE)
-        signature, cerr = p.communicate(commandInterestName.wireEncode().toBuffer())
-        if p.returncode != 0:
+        commandInterest = ndn.Interest(commandInterestName)
+        try:
+            keyChain = ndn.security.KeyChain()
+            keyChain.sign(commandInterest)
+        except:
             print "ERROR: cannot generate signature, please submit your certification " \
                   "request to NDN testbed root"
             return
-
-        commandInterestName.append(buffer(signature))
 
         http_request = "%s/cert-requests/get/" % URL
 
@@ -74,7 +75,7 @@ class Signer(object):
             r = requests.post(
                     http_request,
                     data={
-                        'commandInterest': base64.b64encode(commandInterestName
+                        'commandInterest': base64.b64encode(commandInterest.getName()
                                                               .wireEncode()
                                                               .toBuffer())
                         }
@@ -213,7 +214,7 @@ def sanitize(value):
     return re.sub(r'[^a-zA-Z0-9.,\-!@#$%&*()\\/<>{}[]\|:`~ ]', r'', value)
 
 if __name__ == "__main__":
-    site_prefix = ndn.Name(subprocess.check_output(["ndnsec-get-default", "-q"]))
+    site_prefix = ndn.security.KeyChain().getDefaultIdentity()
     try:
         Signer(site_prefix).run()
     except KeyboardInterrupt:
