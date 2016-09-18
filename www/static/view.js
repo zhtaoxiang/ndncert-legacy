@@ -1,6 +1,6 @@
 console.log("js loaded... ");
 
-$(document).ready(function () {
+jQuery(document).ready(function () {
 console.log("jquery ready... ");
     $('#input').validate({ // initialize the plugin
         rules: {
