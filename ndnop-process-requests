@@ -18,7 +18,7 @@
 
 import json
 import os,sys,getopt
-import urllib
+import urllib.request, urllib.parse, urllib.error
 import argparse
 
 # pip install requests
@@ -35,6 +35,15 @@ import re
 import socket
 
 import pyndn.security
+
+parser = argparse.ArgumentParser(description='Process NDNCERT requests')
+parser.add_argument('-g', '--guest-only', dest='guest_only', action='store_true',
+                    help='''Process only guest requests''')
+parser.add_argument('-a', '--auto-approve', dest='auto_approve', action='store_true',
+                    help='''Automatically approve requests''')
+parser.add_argument('site_prefix', metavar='site_prefix', type=str, nargs='?', default=ndn.security.KeyChain().getDefaultIdentity(),
+                    help='''Site prefix (will use the default identity if omitted)''')
+args = parser.parse_args()
 
 ################################################################################
 ###                                CONFIG                                    ###
@@ -65,8 +74,8 @@ class Signer(object):
             keyChain = ndn.security.KeyChain()
             keyChain.sign(commandInterest)
         except:
-            print "ERROR: cannot generate signature, please submit your certification " \
-                  "request to NDN testbed root"
+            print("ERROR: cannot generate signature, please submit your certification " \
+                  "request to NDN testbed root")
             return
 
         http_request = "%s/cert-requests/get/" % URL
@@ -81,11 +90,11 @@ class Signer(object):
                         }
                 )
         except:
-            print "ERROR: error while communicating with the server"
+            print("ERROR: error while communicating with the server")
             return
 
         if r.status_code != 200:
-            print "ERROR: request not authorized or system is temporarily down"
+            print("ERROR: request not authorized or system is temporarily down")
             return
 
         cert_requests = r.json()
@@ -96,49 +105,62 @@ class Signer(object):
         for req in cert_requests:
             count += 1
             certData = ndn.Data()
-            certData.wireDecode(ndn.Blob(buffer(base64.b64decode(req['cert_request']))))
+            # certData.wireDecode(ndn.Blob(buffer(base64.b64decode(req['cert_request']))))
+            certData.wireDecode(ndn.Blob(base64.b64decode(base64.b64decode(req['cert_request']['$binary']))))
 
-            print " >> Certificate request [%s] << " % certData.getName()[:-2].toUri()
-            print "    Full Name:    [%s]" % sanitize(req['fullname'])
-            print "    Organization: [%s]" % sanitize(req['organization'])
-            print "    Email:        [%s]" % sanitize(req['email'])
-            print "    Homepage:     [%s]" % sanitize(req['homeurl'])
-            print "    Group:        [%s]" % sanitize(req['group'])
-            print "    Advisor:      [%s]" % sanitize(req['advisor'])
+            if args.guest_only and certData.getName()[self.site_prefix.size()].toEscapedString() != "%40GUEST":
+                continue;
 
-            try:
-                if confirm("Do you certify the above information?", resp=False):
-                    cert = self.issueCertificate(req)
-                    decision = "issue"
-                    self.publishCertificate(cert)
-                    issued += 1
-                else:
-                    cert = self.denyCertificate(req)
-                    decision = "reject"
-                    rejected += 1
-            except RequestSkipped:
-                continue
+            print(" >> Certificate request [%s] << " % certData.getName()[:-2].toUri())
+
+            if args.auto_approve:
+                cert = self.issueCertificate(req)
+                decision = "issue"
+                self.publishCertificate(cert)
+                issued += 1
+            else:
+                print(" >> Certificate request [%s] << " % certData.getName()[:-2].toUri())
+                print("    Full Name:    [%s]" % sanitize(req['fullname']))
+                print("    Organization: [%s]" % sanitize(req['organization']))
+                print("    Email:        [%s]" % sanitize(req['email']))
+                print("    Homepage:     [%s]" % sanitize(req['homeurl']))
+                print("    Group:        [%s]" % sanitize(req['group']))
+                print("    Advisor:      [%s]" % sanitize(req['advisor']))
+
+                try:
+                    if confirm("Do you certify the above information?", resp=False):
+                        cert = self.issueCertificate(req)
+                        decision = "issue"
+                        self.publishCertificate(cert)
+                        issued += 1
+                    else:
+                        cert = self.denyCertificate(req)
+                        decision = "reject"
+                        rejected += 1
+                except RequestSkipped:
+                    continue
 
             http_request = "%s/cert/submit/" % URL
             try:
                 r = requests.post(http_request,
                                   data={
+                                      'id': req['_id']['$oid'],
                                       'data': cert
                                       })
                 if r.status_code != 200:
-                    print "ERROR: failed to upload decision to the server"
-                    print r.text
+                    print("ERROR: failed to upload decision to the server")
+                    print(r.text)
                 else:
-                    print "OK. Decision [%s] has been uploaded to the server" % decision
-                    print r.text
+                    print("OK. Decision [%s] has been uploaded to the server" % decision)
+                    print(r.text)
             except:
-                print "ERROR: error while communicating with the server"
+                print("ERROR: error while communicating with the server")
 
         if count == 0:
-            print "DONE: No pending certificate requests"
+            print("DONE: No pending certificate requests")
         else:
-            print "DONE: Processed %d requests, %d issued, %d rejected, %d skipped" % \
-              (count, issued, rejected, count - issued - rejected)
+            print("DONE: Processed %d requests, %d issued, %d rejected, %d skipped" % \
+              (count, issued, rejected, count - issued - rejected))
 
     def issueCertificate(self, request):
         today = datetime.datetime.utcnow()
@@ -163,7 +185,8 @@ class Signer(object):
                    ]
 
         p = subprocess.Popen(cmdline, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
-        cert, err = p.communicate(request['cert_request'])
+        # cert, err = p.communicate(request['cert_request'])
+        cert, err = p.communicate(base64.b64decode(request['cert_request']['$binary']))
         if p.returncode != 0:
             raise RuntimeError("ndnsec-certgen error")
         return cert.rstrip()
@@ -185,9 +208,9 @@ class Signer(object):
             sock.connect((REPO_HOST, int(REPO_PORT)))
 
             sock.send(base64.b64decode(certificate))
-        except Exception,e:
-            print e
-            print "ERROR: an error occurred while publishing certificate"
+        except Exception as e:
+            print(e)
+            print("ERROR: an error occurred while publishing certificate")
 
 def confirm(prompt, resp):
     if resp:
@@ -196,11 +219,11 @@ def confirm(prompt, resp):
         prompt = '%s [%s]|%s|%s: ' % (prompt, 'n', 'y', 's')
 
     while True:
-        ans = raw_input(prompt)
+        ans = input(prompt)
         if not ans:
             return resp
         if ans not in ['y', 'Y', 'n', 'N', 's', 'S']:
-            print 'please enter y, n, or s.'
+            print('please enter y, n, or s.')
             continue
         if ans == 'y' or ans == 'Y':
             return True
@@ -214,9 +237,8 @@ def sanitize(value):
     return re.sub(r'[^a-zA-Z0-9.,\-!@#$%&*()\\/<>{}[]\|:`~ ]', r'', value)
 
 if __name__ == "__main__":
-    site_prefix = ndn.security.KeyChain().getDefaultIdentity()
     try:
-        Signer(site_prefix).run()
+        Signer(ndn.Name(args.site_prefix)).run()
     except KeyboardInterrupt:
-        print ""
+        print("")
         pass
