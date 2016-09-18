@@ -8,7 +8,7 @@ def check_auth(username, password):
     """
 
     return username == current_app.config['ADMIN_USERNAME'] and \
-        hashlib.sha256(password).hexdigest() == current_app.config['ADMIN_PASSWORD']
+        hashlib.sha256(password.encode('utf-8')).hexdigest() == current_app.config['ADMIN_PASSWORD']
 
 def authenticate():
     """Sends a 401 response that enables basic auth"""

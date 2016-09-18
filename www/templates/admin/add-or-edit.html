@@ -12,7 +12,7 @@
 
 {% macro with_errors(field) %}
     <div class="form_field">
-    {% if field.errors %}
+      {% if field.errors %}
         {% set css_class = 'error' %}
         {{ field.label }} {{ field(class=css_class, **kwargs) }}
         {# <ul class="errors">{% for error in field.errors %}<li>{{ error|e }}</li>{% endfor %}</ul> #}

@@ -18,6 +18,7 @@ class RegistrationForm(Form):
     site_emails = TextField('Site Emails', [Required()])
     name        = TextField('Operator Name', [Required()])
     email       = TextField('Operator Email', [Required()])
+    allowGuests = BooleanField('Allow guest accounts', false_values=[False])
     key         = TextAreaField('Operator public key or public key certificate (base64)')
 
 class Operator(dict):

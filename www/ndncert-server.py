@@ -34,9 +34,10 @@ import datetime
 import base64
 import pyndn as ndn
 import json
-import urllib
+import urllib.parse
 
 from bson import json_util
+from bson.objectid import ObjectId
 
 tmpl_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'templates')
 
@@ -65,22 +66,34 @@ def request_token():
         #################################################
         ###              Token request                ###
         #################################################
-        return render_template('token-request-form.html', URL=app.config['URL'])
+
+        guestSites = mongo.db.operators.find({'allowGuests':True})
+        return render_template('token-request-form.html', URL=app.config['URL'], sites=guestSites)
 
     else: # 'POST'
         #################################################
         ###        Token creation & emailing          ###
         #################################################
+
         user_email = request.form['email']
-        try:
-            # pre-validation
-            params = get_operator_for_email(user_email)
-        except:
-            return render_template('error-unknown-site.html')
+        site_prefix = request.form['site']
+        if site_prefix != "":
+            params = get_operator_for_guest_site(user_email, site_prefix)
+            try:
+                params = get_operator_for_guest_site(user_email, site_prefix)
+            except:
+                return render_template('error-unknown-site.html')
+        else:
+            try:
+                # pre-validation
+                params = get_operator_for_email(user_email)
+            except:
+                return render_template('error-unknown-site.html')
 
         token = {
             'email': user_email,
             'token': generate_token(),
+            'site_prefix': site_prefix,
             'created_on': datetime.datetime.utcnow(), # to periodically remove unverified tokens
             }
         mongo.db.tokens.insert(token)
@@ -111,12 +124,19 @@ def submit_request():
         if (token == None):
             abort(403)
 
-        # infer parameters from email
-        try:
-            # pre-validation
-            params = get_operator_for_email(user_email)
-        except:
-            abort(403)
+        site_prefix = token['site_prefix']
+        if site_prefix != "":
+            try:
+                params = get_operator_for_guest_site(user_email, site_prefix)
+            except:
+                abort(403)
+        else:
+            # infer parameters from email
+            try:
+                # pre-validation
+                params = get_operator_for_email(user_email)
+            except:
+                abort(403)
 
         # don't delete token for now, just give user a form to input stuff
         return render_template('request-form.html', URL=app.config['URL'],
@@ -133,22 +153,28 @@ def submit_request():
 
         # Now, do basic validation of correctness of user input, save request in the database
         # and notify the operator
-        user_fullname = request.form['fullname']
-        user_homeurl   = request.form['homeurl']
         #optional parameters
+
+        user_fullname = request.form['fullname'] if 'fullname' in request.form else ""
+        user_homeurl   = request.form['homeurl'] if 'homeurl' in request.form else ""
         user_group   = request.form['group']   if 'group'   in request.form else ""
         user_advisor = request.form['advisor'] if 'advisor' in request.form else ""
 
-        # infer parameters from email
-        try:
-            # pre-validation
-            params = get_operator_for_email(user_email)
-        except:
-            return "403"
-            abort(403)
-            return
+        site_prefix = token['site_prefix']
+        if site_prefix != "":
+            try:
+                params = get_operator_for_guest_site(user_email, site_prefix)
+            except:
+                abort(403)
+        else:
+            # infer parameters from email
+            try:
+                # pre-validation
+                params = get_operator_for_email(user_email)
+            except:
+                abort(403)
 
-        if user_fullname == "":
+        if site_prefix == "" and user_fullname == "":
             return render_template('request-form.html',
                                    error="Full Name field cannot be empty",
                                    URL=app.config['URL'], email=user_email,
@@ -157,7 +183,8 @@ def submit_request():
         try:
             user_cert_request = base64.b64decode(request.form['cert-request'])
             user_cert_data = ndn.Data()
-            user_cert_data.wireDecode(ndn.Blob(buffer(user_cert_request)))
+            # user_cert_data.wireDecode(ndn.Blob(buffer(user_cert_request)))
+            user_cert_data.wireDecode(ndn.Blob(memoryview(user_cert_request)))
         except:
             return render_template('request-form.html',
                                    error="Incorrectly generated NDN certificate request, "
@@ -173,19 +200,20 @@ def submit_request():
                                    URL=app.config['URL'], email=user_email,
                                    token=user_token, **params)
 
-        cert_name = extract_cert_name(user_cert_data.getName()).toUri()
-        # remove any previous requests for the same certificate name
-        mongo.db.requests.remove({'cert_name': cert_name})
+        # cert_name = extract_cert_name(user_cert_data.getName()).toUri()
+        # # remove any previous requests for the same certificate name
+        # mongo.db.requests.remove({'cert_name': cert_name})
 
         cert_request = {
                 'operator_id': str(params['operator']['_id']),
+                'site_prefix': token['site_prefix'],
+                'assigned_namespace': str(params['assigned_namespace']),
                 'fullname': user_fullname,
                 'organization': params['operator']['site_name'],
                 'email': user_email,
                 'homeurl': user_homeurl,
                 'group': user_group,
                 'advisor': user_advisor,
-                'cert_name': cert_name,
                 'cert_request': base64.b64encode(user_cert_request),
                 'created_on': datetime.datetime.utcnow(), # to periodically remove unverified tokens
             }
@@ -215,14 +243,18 @@ def submit_request():
 def get_candidates():
     commandInterestName = ndn.Name()
     commandInterestName.wireDecode(
-        ndn.Blob(buffer(base64.b64decode(request.form['commandInterest']))))
+        # ndn.Blob(buffer(base64.b64decode(request.form['commandInterest']))))
+        ndn.Blob(base64.b64decode(request.form['commandInterest'])))
 
-    timestamp  = commandInterestName[-3]
-    keyLocator = ndn.Name()
-    keyLocator.wireDecode(commandInterestName[-2].getValue())
-    signature  = commandInterestName[-1]
+    site_prefix = ndn.Name()
+    site_prefix.wireDecode(commandInterestName[-3].getValue().toBuffer())
+    timestamp  = commandInterestName[-4]
 
-    operator = mongo.db.operators.find_one({'site_prefix': keyLocator.toUri()})
+    signature = ndn.WireFormat.getDefaultWireFormat().decodeSignatureInfoAndValue(commandInterestName[-2].getValue().toBuffer(),
+                                                                                  commandInterestName[-1].getValue().toBuffer())
+    keyLocator = signature.getKeyLocator().getKeyName()
+
+    operator = mongo.db.operators.find_one({'site_prefix': site_prefix.toUri()})
     if operator == None:
         abort(403)
 
@@ -239,31 +271,20 @@ def get_candidates():
 @app.route('/cert/submit/', methods = ['POST'])
 def submit_certificate():
     data = ndn.Data()
-    data.wireDecode(ndn.Blob(buffer(base64.b64decode(request.form['data']))))
+    # data.wireDecode(ndn.Blob(buffer(base64.b64decode(request.form['data']))))
+    data.wireDecode(ndn.Blob(memoryview(base64.b64decode(request.form['data']))))
 
-    operator_prefix = extract_cert_name(data.getSignature().getKeyLocator().getKeyName())
-
-    operator = mongo.db.operators.find_one({'site_prefix': operator_prefix.toUri()})
-    if operator == None:
-        return make_response('operator not found [%s]' % operator_prefix, 403)
-        abort(403)
-
-    # @todo verify data packet
-    # @todo verify timestamp
-
-    cert_name = extract_cert_name(data.getName())
-    cert_request = mongo.db.requests.find_one({'cert_name': cert_name.toUri()})
-
+    cert_request = mongo.db.requests.find_one({'_id': ObjectId(str(request.form['id']))})
     if cert_request == None:
         abort(403)
 
-    # infer parameters from email
-    try:
-        # pre-validation
-        params = get_operator_for_email(cert_request['email'])
-    except:
+    operator = mongo.db.operators.find_one({"_id": ObjectId(cert_request['operator_id'])})
+    if operator == None:
+        mongo.db.requests.remove(cert_request) # remove invalid request
         abort(403)
-        return
+
+    # # @todo verify data packet
+    # # @todo verify timestamp
 
     if len(data.getContent()) == 0:
         # (no deny reason for now)
@@ -296,14 +317,12 @@ def submit_certificate():
                       recipients = [cert_request['email']],
                       body = render_template('cert-issued-email.txt',
                                              URL=app.config['URL'],
-                                             assigned_namespace=params['assigned_namespace'],
-                                             quoted_cert_name=urllib.quote(cert['name'], ''),
+                                             quoted_cert_name=urllib.parse.quote(cert['name'], ''),
                                              cert_id=str(data.getName()[-3]),
                                              **cert_request),
                       html = render_template('cert-issued-email.html',
                                              URL=app.config['URL'],
-                                             assigned_namespace=params['assigned_namespace'],
-                                             quoted_cert_name=urllib.quote(cert['name'], ''),
+                                             quoted_cert_name=urllib.parse.quote(cert['name'], ''),
                                              cert_id=str(data.getName()[-3]),
                                              **cert_request))
         mail.send(msg)
@@ -317,7 +336,7 @@ def submit_certificate():
 #############################################################################################
 
 def generate_token():
-    return ''.join([random.choice(string.ascii_letters + string.digits) for n in xrange(60)])
+    return ''.join([random.choice(string.ascii_letters + string.digits) for n in range(60)])
 
 def ndnify(dnsName):
     ndnName = ndn.Name()
@@ -351,19 +370,22 @@ def get_operator_for_email(email):
                 .append(str(user))
 
     # return various things
-    return {'operator':operator, 'user':user, 'domain':domain,
+    return {'operator':operator, 'user':user, 'domain':domain, 'requestDetails':True,
             'ndn_domain':ndn_domain, 'assigned_namespace':assigned_namespace}
 
-def extract_cert_name(name):
-    # remove two (or 3 in case of rejection) last components and remove "KEY" keyword at any position
-    newname = ndn.Name()
-    last = -2
-    if str(name[-1]) == 'REVOKED':
-        last = -3
-    for component in name[:last]:
-        if str(component) != 'KEY':
-            newname.append(component)
-    return newname
+def get_operator_for_guest_site(email, site_prefix):
+    operator = mongo.db.operators.find_one({'site_prefix': site_prefix, 'allowGuests': True})
+    if (operator == None):
+        raise Exception("Invalid site")
+
+    assigned_namespace = ndn.Name(site_prefix)
+    assigned_namespace \
+      .append("@GUEST") \
+      .append(email)
+
+    # return various things
+    return {'operator':operator, 'user':None, 'domain':None, 'requestDetails':False,
+            'ndn_domain':site_prefix, 'assigned_namespace':assigned_namespace}
 
 if __name__ == '__main__':
     app.run(debug = True, host='0.0.0.0')

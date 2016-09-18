@@ -1,65 +1,69 @@
 {% extends "layout.html" %}
 
 {% block error %}
-{% if error is defined %}
-<div class="error">
-{{ error }}
-</div>
-{% endif %}
+  {% if error is defined %}
+    <div class="error">
+      {{ error }}
+    </div>
+  {% endif %}
 {% endblock %}
 
 {% block instructions %}
-<p>Please fill information about you and submit NDN certfication request.</p>
+  <p>Please fill information about you and submit NDN certfication request.</p>
 
-<p>Note that a limited number of characters are allowed to be included in NDN certificates, including lower and upper case latin letters, numbers, and punctuation symbols.</p>
+  <p>Note that a limited number of characters are allowed to be included in NDN certificates, including lower and upper case latin letters, numbers, and punctuation symbols.</p>
 
-<p>To generate NDN certification request, please follow the instructions below:
+  <p>To generate NDN certification request, please follow the instructions below:
 
-<ul>
-  <li>Ensure that you have installed NFD.  If you do not have NFD installed yet, you can follow <a href="http://named-data.net/doc/NFD/current/INSTALL.html" target="_blank">these simple installation instructions</a>.</li>
-  <li>Open terminal and issue the following command:<br/>
+    <ul>
+      <li>Ensure that you have installed NFD.  If you do not have NFD installed yet, you can follow <a href="http://named-data.net/doc/NFD/current/INSTALL.html" target="_blank">these simple installation instructions</a>.</li>
+      <li>Open terminal and issue the following command:<br/>
 
-  <div>
-  <pre>
+        <div>
+          <pre>
 ndnsec-keygen {{ assigned_namespace }}</pre>
-  </div>
-  </li>
+        </div>
+      </li>
 
-  <li>
-  Copy the output of the command into the 'NDN certification request' field below
-  </li>
-</ul>
+      <li>
+        Copy the output of the command into the 'NDN certification request' field below
+      </li>
+    </ul>
 
 {% endblock %}
 
 {% block body %}
-<p/>
-<form name="input" id="input" action="{{ URL }}/cert-requests/submit/" method="post">
+  <p/>
+  <form name="input" id="input" action="{{ URL }}/cert-requests/submit/" method="post">
 
-<br/>
-<b>Full Name:</b>
-<input type="text" name="fullname" size="20"></input>
-<br/>
-Homepage URL (optional):
-<input type="text" name="homeurl" size="20"></input>
-<br/>
-Organization:
-<div class="box"><b>{{ operator.site_name }}</b></div>
-<br/>
-Department/Group (optional):
-<input type="text" name="group" class="group" size="20"></input>
-<br/>
-Advisor Name (optional):
-<input type="text" name="advisor" size="20"></input>
-<br/>
-<b>NDN certification request:</b>
-<textarea class="cert-request" name="cert-request"></textarea>
+    {% if requestDetails %}
+    <br/>
+    <b>Full Name:</b>
+    <input type="text" name="fullname" size="20"></input>
+    <br/>
+    Homepage URL (optional):
+    <input type="text" name="homeurl" size="20"></input>
+    {% endif %}
+    <br/>
+    Organization:
+    <div class="box"><b>{{ operator.site_name }}</b></div>
+    {% if requestDetails %}
+    <br/>
+    Department/Group (optional):
+    <input type="text" name="group" class="group" size="20"></input>
+    <br/>
+    Advisor Name (optional):
+    <input type="text" name="advisor" size="20"></input>
+    {% endif %}
+    <br/>
+    <b>NDN certification request:</b>
+    <textarea class="cert-request" name="cert-request"></textarea>
 
-<input type="hidden" name="email" value="{{ email }}"></input>
-<input type="hidden" name="token" value="{{ token }}"></input>
-<input type="submit" value="Submit"></input>
-</form>
-<p/>
+    <input type="hidden" name="email" value="{{ email }}"></input>
+    <input type="hidden" name="token" value="{{ token }}"></input>
+    <input type="submit" value="Submit"></input>
+  </form>
+  <p/>
 {% endblock %}
 
 </html>
