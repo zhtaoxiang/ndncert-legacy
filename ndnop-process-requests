@@ -196,12 +196,12 @@ class Signer(object):
     def denyCertificate(self, request):
         cmdline = ['ndnsec-cert-revoke',
                    '--sign-id', str(self.site_prefix),
-                   # '--cert-prefix', str(self.site_prefix),
+                   '--cert-prefix', str(self.site_prefix),
                    '--request', '-'
                    ]
 
         p = subprocess.Popen(cmdline, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
-        cert, err = p.communicate(request['cert_request'])
+        cert, err = p.communicate(base64.b64decode(request['cert_request']['$binary']))
         return cert.rstrip()
 
     def publishCertificate(self, certificate):
