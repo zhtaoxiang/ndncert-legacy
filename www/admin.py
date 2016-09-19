@@ -19,7 +19,9 @@ class RegistrationForm(Form):
     name        = TextField('Operator Name', [Required()])
     email       = TextField('Operator Email', [Required()])
     allowGuests = BooleanField('Allow guest accounts', false_values=[False])
-    key         = TextAreaField('Operator public key or public key certificate (base64)')
+    doNotSendOpRequestsForGuests = BooleanField('Disable security operator requests for guest accounts', false_values=[False])
+    doNotSendOpRequests          = BooleanField('Disable all security operator requests', false_values=[False])
+    key         = TextAreaField('Operator public key certificate (base64)')
 
 class Operator(dict):
     def getlist(self, key):

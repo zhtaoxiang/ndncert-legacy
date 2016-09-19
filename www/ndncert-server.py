@@ -222,16 +222,18 @@ def submit_request():
         # OK. authorized, proceed to the next step
         mongo.db.tokens.remove(token)
 
-        msg = Message("[NDN Certification] User certification request",
-                      sender = app.config['MAIL_FROM'],
-                      recipients = [params['operator']['email']],
-                      body = render_template('operator-notify-email.txt', URL=app.config['URL'],
-                                             operator_name=params['operator']['name'],
-                                             **cert_request),
-                      html = render_template('operator-notify-email.html', URL=app.config['URL'],
-                                             operator_name=params['operator']['name'],
-                                             **cert_request))
-        mail.send(msg)
+        if (token['site_prefix'] != "" and not params['operator']['doNotSendOpRequestsForGuests']) or \
+           (token['site_prefix'] == "" and not params['operator']['doNotSendOpRequests']):
+            msg = Message("[NDN Certification] User certification request",
+                          sender = app.config['MAIL_FROM'],
+                          recipients = [params['operator']['email']],
+                          body = render_template('operator-notify-email.txt', URL=app.config['URL'],
+                                                 operator_name=params['operator']['name'],
+                                                 **cert_request),
+                          html = render_template('operator-notify-email.html', URL=app.config['URL'],
+                                                 operator_name=params['operator']['name'],
+                                                 **cert_request))
+            mail.send(msg)
 
         return render_template('request-thankyou.html')
 
