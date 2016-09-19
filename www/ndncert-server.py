@@ -20,8 +20,8 @@
 
 #html/rest
 from flask import Flask, jsonify, abort, make_response, request, render_template
-from flask.ext.pymongo import PyMongo
-from flask.ext.mail import Mail, Message
+from flask_pymongo import PyMongo
+from flask_mail import Mail, Message
 
 # mail
 import smtplib

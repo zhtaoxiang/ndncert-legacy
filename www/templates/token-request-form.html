@@ -15,7 +15,7 @@ Hello, please enter your email to begin NDN Testbed certification.
   <select name="site" id="site">
     <option value="">Automatic</option>
     {% for site in sites %}
-      <option value="{{ site.site_prefix }}">{{ site.site_name }}</option>
+      <option value="{{ site.site_prefix }}">{{ site.site_prefix }} ({{ site.site_name }})</option>
     {% endfor %}
   </select>
   <br/>
