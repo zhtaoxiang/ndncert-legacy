@@ -158,7 +158,8 @@ class Signer(object):
                 print("ERROR: error while communicating with the server")
 
         if count == 0:
-            print("DONE: No pending certificate requests")
+            if not args.auto_approve:
+                print("DONE: No pending certificate requests")
         else:
             print("DONE: Processed %d requests, %d issued, %d rejected, %d skipped" % \
               (count, issued, rejected, count - issued - rejected))
