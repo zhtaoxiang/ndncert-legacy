@@ -1,7 +1,7 @@
 Greetings, {{ fullname }}!
 
 Your NDN certificate has been approved and is ready for download.  
-You can download and install it using the following command:
+You can download and install it by using the following command:
 
 ndnsec-install-cert "{{ URL }}/cert/get/?name={{ quoted_cert_name }}"
 

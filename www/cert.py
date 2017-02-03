@@ -13,15 +13,23 @@ cert = Blueprint('cert', __name__, template_folder='templates')
 
 import auth
 
+nfd_android_client = "NFD-Android"
+
 # Public interface
 @cert.route('/cert/get/', methods = ['GET'])
 def get_certificate():
+    client = request.args.get('client')
     name = request.args.get('name')
     isView = request.args.get('view')
+    token = request.args.get('token')
 
-    ndn_name = ndn.Name(str(name))
+    if client == nfd_android_client:
+        cert = current_app.mongo.db.certs.find_one({'token': token})
+        ndn_name = ndn.Name(str(cert['name']))
+    else:
+        ndn_name = ndn.Name(str(name))
 
-    cert = current_app.mongo.db.certs.find_one({'name': str(name)})
+        cert = current_app.mongo.db.certs.find_one({'name': str(name)})
     if cert == None:
         abort(404)
 

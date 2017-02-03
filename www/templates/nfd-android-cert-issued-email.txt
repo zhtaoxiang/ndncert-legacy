@@ -1,0 +1,9 @@
+Greetings, {{ fullname }}!
+
+Your NDN certificate has been approved and is ready for download.  
+You can download and install it by entering the following code into NFD-Android -> Identities -> Install Certificate:
+
+{{ token }}
+
+Sincerely, 
+NDN Testbed Certificate robot

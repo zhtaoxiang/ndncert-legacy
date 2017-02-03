@@ -29,6 +29,7 @@ import requests
 import subprocess
 import base64
 import pyndn as ndn
+import pyndn.security.certificate
 import time
 import datetime
 import re
@@ -49,7 +50,8 @@ args = parser.parse_args()
 ###                                CONFIG                                    ###
 ################################################################################
 
-URL = "http://ndncert.named-data.net"
+#URL = "http://ndncert.named-data.net"
+URL = "http://192.168.0.4:5000"
 PUBLISH_REPO = True
 REPO_HOST = "localhost"
 REPO_PORT = 7376
@@ -71,9 +73,10 @@ class Signer(object):
           .append(self.site_prefix.wireEncode())
 
         commandInterest = ndn.Interest(commandInterestName)
+        # TODO: temporarily ignore signature
         try:
             keyChain = ndn.security.KeyChain()
-            keyChain.sign(commandInterest)
+            #keyChain.sign(commandInterest)
         except:
             print("ERROR: cannot generate signature, please submit your certification " \
                   "request to NDN testbed root")
@@ -85,12 +88,13 @@ class Signer(object):
             r = requests.post(
                     http_request,
                     data={
-                        'commandInterest': base64.b64encode(commandInterest.getName()
+                        'commandInterest': base64.b64encode(bytes(commandInterest.getName()
                                                               .wireEncode()
-                                                              .toBuffer())
+                                                              .toBuffer()))
                         }
                 )
-        except:
+        except Exception as e:
+            print(str(e))
             print("ERROR: error while communicating with the server")
             return
 
@@ -143,6 +147,7 @@ class Signer(object):
 
             http_request = "%s/cert/submit/" % URL
             try:
+                #TODO: do we need to modify this?
                 r = requests.post(http_request,
                                   data={
                                       'id': req['_id']['$oid'],
@@ -207,7 +212,7 @@ class Signer(object):
     def publishCertificate(self, certificate):
         if PUBLISH_REPO:
             try:
-                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
                 sock.connect((REPO_HOST, int(REPO_PORT)))
 
                 sock.send(base64.b64decode(certificate))

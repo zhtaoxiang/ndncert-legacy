@@ -34,7 +34,7 @@ import datetime
 import base64
 import pyndn as ndn
 import json
-import urllib.parse
+import urllib
 
 from bson import json_util
 from bson.objectid import ObjectId
@@ -54,6 +54,8 @@ from admin import admin
 from cert import cert
 app.register_blueprint(admin)
 app.register_blueprint(cert)
+
+nfd_android_client = "NFD-Android"
 
 #############################################################################################
 # User-facing components
@@ -77,22 +79,33 @@ def request_token():
 
         user_email = request.form['email']
         site_prefix = request.form['site']
+        if 'client' in request.form.keys():
+            client = request.form['client']
+        else:
+            client = ""
         if site_prefix != "":
-            params = get_operator_for_guest_site(user_email, site_prefix)
+            #params = get_operator_for_guest_site(user_email, site_prefix)
             try:
                 params = get_operator_for_guest_site(user_email, site_prefix)
             except:
-                return render_template('error-unknown-site.html')
+                if client == nfd_android_client:
+                    return json.dumps({"status": 403})
+                else:
+                    return render_template('error-unknown-site.html')
         else:
             try:
                 # pre-validation
                 params = get_operator_for_email(user_email)
             except:
-                return render_template('error-unknown-site.html')
+                #return render_template('error-unknown-site.html')
+                if client == nfd_android_client:
+                    return json.dumps({"status": 403})
+                else:
+                    return render_template('error-unknown-site.html')
 
         token = {
             'email': user_email,
-            'token': generate_token(),
+            'token': generate_token(client),
             'site_prefix': site_prefix,
             'created_on': datetime.datetime.utcnow(), # to periodically remove unverified tokens
             }
@@ -101,13 +114,22 @@ def request_token():
         if params['domain'] == 'operators.named-data.net':
             return render_template('token-email.html', URL=app.config['URL'], **token)
         else:
-            msg = Message("[NDN Certification] Request confirmation",
+            if client == nfd_android_client:
+                msg = Message("[NDN Certification] Request confirmation",
                           sender = app.config['MAIL_FROM'],
                           recipients = [user_email],
-                          body = render_template('token-email.txt', URL=app.config['URL'], **token),
-                          html = render_template('token-email.html', URL=app.config['URL'], **token))
-            mail.send(msg)
-            return render_template('token-sent.html', email=user_email)
+                          body = render_template('nfd-android-token-email.txt', URL=app.config['URL'], **token),
+                          html = render_template('nfd-android-token-email.html', URL=app.config['URL'], **token))
+                mail.send(msg)
+                return json.dumps({"status": 200})
+            else:
+                msg = Message("[NDN Certification] Request confirmation",
+                          sender = app.config['MAIL_FROM'],
+                          recipients = [user_email],
+                          body = render_template('web-token-email.txt', URL=app.config['URL'], **token),
+                          html = render_template('web-token-email.html', URL=app.config['URL'], **token))
+                mail.send(msg)
+                return render_template('token-sent.html', email=user_email)
 
 @app.route('/help', methods = ['GET'])
 def show_help():
@@ -117,39 +139,61 @@ def show_help():
 def submit_request():
     if request.method == 'GET':
         # Email and token (to authorize the request==validate email)
-        user_email = request.args.get('email')
-        user_token = request.args.get('token')
+        client = request.args.get('client')
+        if client == nfd_android_client:
+            user_token = request.args.get('token')
+            token = mongo.db.tokens.find_one({'token':user_token})
+            if (token == None):
+                return json.dumps({"status": 404})
+            user_email = token['email']
+        else:
+            user_email = request.args.get('email')
+            user_token = request.args.get('token')
 
-        token = mongo.db.tokens.find_one({'email':user_email, 'token':user_token})
-        if (token == None):
-            abort(403)
+            token = mongo.db.tokens.find_one({'email':user_email, 'token':user_token})
+            if (token == None):
+                abort(403, "No such token for this email address")
 
         site_prefix = token['site_prefix']
         if site_prefix != "":
             try:
                 params = get_operator_for_guest_site(user_email, site_prefix)
             except:
-                abort(403)
+                if client == nfd_android_client:
+                    return json.dumps({"status": 403})
+                else:
+                    abort(403)
         else:
             # infer parameters from email
             try:
                 # pre-validation
                 params = get_operator_for_email(user_email)
             except:
-                abort(403)
+                if client == nfd_android_client:
+                    return json.dumps({"status": 403})
+                else:
+                    abort(403)
 
         # don't delete token for now, just give user a form to input stuff
-        return render_template('request-form.html', URL=app.config['URL'],
+        
+        if client == nfd_android_client:
+            return json.dumps({"status": 200, "email": user_email, "assigned_namespace": ndn.Name(params['assigned_namespace']).toUri(), 'organization': params['operator']['site_name']})
+        else:
+            return render_template('request-form.html', URL=app.config['URL'],
                                email=user_email, token=user_token, **params)
 
     else: # 'POST'
         # Email and token (to authorize the request==validate email)
         user_email = request.form['email']
         user_token = request.form['token']
+        client = request.form['client'] if 'client' in request.form else ""
 
         token = mongo.db.tokens.find_one({'email':user_email, 'token':user_token})
         if (token == None):
-            abort(403)
+            if client == nfd_android_client:
+                return json.dumps({"status":403})
+            else:
+                abort(403, "No such token for this email address")
 
         # Now, do basic validation of correctness of user input, save request in the database
         # and notify the operator
@@ -165,15 +209,23 @@ def submit_request():
             try:
                 params = get_operator_for_guest_site(user_email, site_prefix)
             except:
-                abort(403)
+                if client == nfd_android_client:
+                    return json.dumps({"status":403})
+                else:
+                    abort(403)
         else:
             # infer parameters from email
             try:
                 # pre-validation
                 params = get_operator_for_email(user_email)
             except:
-                abort(403)
+                if client == nfd_android_client:
+                    return json.dumps({"status":403})
+                else:
+                    abort(403)
 
+        # don't need to check this for nfd_android_client, as this has already been checked 
+        # before submitting all the info
         if site_prefix == "" and user_fullname == "":
             return render_template('request-form.html',
                                    error="Full Name field cannot be empty",
@@ -186,7 +238,10 @@ def submit_request():
             # user_cert_data.wireDecode(ndn.Blob(buffer(user_cert_request)))
             user_cert_data.wireDecode(ndn.Blob(memoryview(user_cert_request)))
         except:
-            return render_template('request-form.html',
+            if client == nfd_android_client:
+                return json.dumps({"status":403})
+            else:
+                return render_template('request-form.html',
                                    error="Incorrectly generated NDN certificate request, "
                                          "please try again",
                                    URL=app.config['URL'], email=user_email,
@@ -194,7 +249,10 @@ def submit_request():
 
         # check if the user supplied correct name for the certificate request
         if not params['assigned_namespace'].isPrefixOf(user_cert_data.getName()):
-            return render_template('request-form.html',
+            if client == nfd_android_client:
+                return json.dumps({"status":403})
+            else:
+                return render_template('request-form.html',
                                    error="Incorrectly generated NDN certificate request, "
                                          "please try again",
                                    URL=app.config['URL'], email=user_email,
@@ -215,7 +273,8 @@ def submit_request():
                 'group': user_group,
                 'advisor': user_advisor,
                 'cert_request': base64.b64encode(user_cert_request),
-                'created_on': datetime.datetime.utcnow(), # to periodically remove unverified tokens
+                'created_on': datetime.datetime.utcnow(), # to periodically remove unverified tokens,
+                'token': generate_token(client) if client == nfd_android_client else ""
             }
         mongo.db.requests.insert(cert_request)
 
@@ -235,7 +294,10 @@ def submit_request():
                                                  **cert_request))
             mail.send(msg)
 
-        return render_template('request-thankyou.html')
+        if client == nfd_android_client:
+            return json.dumps({"status": 200})
+        else:
+            return render_template('request-thankyou.html')
 
 #############################################################################################
 # Operator-facing components
@@ -249,14 +311,16 @@ def get_candidates():
         ndn.Blob(base64.b64decode(request.form['commandInterest'])))
 
     site_prefix = ndn.Name()
-    site_prefix.wireDecode(commandInterestName[-3].getValue().toBuffer())
-    timestamp  = commandInterestName[-4]
+    site_prefix.wireDecode(commandInterestName[-1].getValue().toBuffer())
+    timestamp  = commandInterestName[-2]
+    
+    # TODO: haitao remove this hack after test 
+    #signature = ndn.WireFormat.getDefaultWireFormat().decodeSignatureInfoAndValue(commandInterestName[-2].getValue().toBuffer(),
+    #                                                                              commandInterestName[-1].getValue().toBuffer())
+    #keyLocator = signature.getKeyLocator().getKeyName()
 
-    signature = ndn.WireFormat.getDefaultWireFormat().decodeSignatureInfoAndValue(commandInterestName[-2].getValue().toBuffer(),
-                                                                                  commandInterestName[-1].getValue().toBuffer())
-    keyLocator = signature.getKeyLocator().getKeyName()
-
-    operator = mongo.db.operators.find_one({'site_prefix': site_prefix.toUri()})
+    #operator = mongo.db.operators.find_one({'site_prefix': site_prefix.toUri()})
+    operator = {'_id': 1, 'site_name': 'UCLA', 'email': 'zhtaoxiang@126.com', 'doNotSendOpRequests': False, 'name': 'haitao'}
     if operator == None:
         abort(403)
 
@@ -280,7 +344,9 @@ def submit_certificate():
     if cert_request == None:
         abort(403)
 
-    operator = mongo.db.operators.find_one({"_id": ObjectId(cert_request['operator_id'])})
+    # TODO: haitao remove this hack after test 
+    # operator = mongo.db.operators.find_one({"_id": ObjectId(cert_request['operator_id'])})
+    operator = {'_id': 1, 'site_name': 'UCLA', 'email': 'zhtaoxiang@126.com', 'doNotSendOpRequests': False, 'name': 'haitao'}
     if operator == None:
         mongo.db.requests.remove(cert_request) # remove invalid request
         abort(403)
@@ -310,19 +376,37 @@ def submit_certificate():
             'name': data.getName().toUri(),
             'cert': request.form['data'],
             'operator': operator,
-            'created_on': datetime.datetime.utcnow(), # to periodically remove unverified tokens
+            'created_on': datetime.datetime.utcnow(), # to periodically remove unverified tokens, 
+            'token': cert_request['token'] if 'token' in cert_request else ''
             }
         mongo.db.certs.insert(cert)
 
-        msg = Message("[NDN Certification] NDN certificate issued",
+        # for nfd-android applicatin, use a token to fetch the certificate but not install it
+        # using command line
+        if 'token' in cert and len(cert['token']) != 0:
+            msg = Message("[NDN Certification] NDN certificate issued",
                       sender = app.config['MAIL_FROM'],
                       recipients = [cert_request['email']],
-                      body = render_template('cert-issued-email.txt',
+                      body = render_template('nfd-android-cert-issued-email.txt',
                                              URL=app.config['URL'],
                                              quoted_cert_name=urllib.parse.quote(cert['name'], ''),
                                              cert_id=str(data.getName()[-3]),
                                              **cert_request),
-                      html = render_template('cert-issued-email.html',
+                      html = render_template('nfd-android-cert-issued-email.html',
+                                             URL=app.config['URL'],
+                                             quoted_cert_name=urllib.parse.quote(cert['name'], ''),
+                                             cert_id=str(data.getName()[-3]),
+                                             **cert_request))
+        else:
+            msg = Message("[NDN Certification] NDN certificate issued",
+                      sender = app.config['MAIL_FROM'],
+                      recipients = [cert_request['email']],
+                      body = render_template('web-cert-issued-email.txt',
+                                             URL=app.config['URL'],
+                                             quoted_cert_name=urllib.parse.quote(cert['name'], ''),
+                                             cert_id=str(data.getName()[-3]),
+                                             **cert_request),
+                      html = render_template('web-cert-issued-email.html',
                                              URL=app.config['URL'],
                                              quoted_cert_name=urllib.parse.quote(cert['name'], ''),
                                              cert_id=str(data.getName()[-3]),
@@ -337,8 +421,11 @@ def submit_certificate():
 # Helpers
 #############################################################################################
 
-def generate_token():
-    return ''.join([random.choice(string.ascii_letters + string.digits) for n in range(60)])
+def generate_token(client):
+    if client == nfd_android_client:
+        return ''.join([random.choice(string.digits) for n in range(6)])
+    else:
+        return ''.join([random.choice(string.ascii_letters + string.digits) for n in range(60)])
 
 def ndnify(dnsName):
     ndnName = ndn.Name()
@@ -353,6 +440,9 @@ def get_operator_for_email(email):
     if (operator == None):
         operator = mongo.db.operators.find_one({'site_emails': {'$in':[ 'guest' ]}})
 
+        # TODO: haitao remove this hack after testing
+        operator = {'_id': 1, 'site_name': 'UCLA', 'email': 'zhtaoxiang@126.com', 'doNotSendOpRequests': False, 'name': 'haitao'}
+        
         if (operator == None):
             raise Exception("Unknown site for domain [%s]" % domain)
 
