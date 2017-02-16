@@ -105,7 +105,7 @@ def request_token():
 
         token = {
             'email': user_email,
-            'token': generate_token(client),
+            'token': generate_token(""),
             'site_prefix': site_prefix,
             'created_on': datetime.datetime.utcnow(), # to periodically remove unverified tokens
             }
@@ -115,13 +115,14 @@ def request_token():
             return render_template('token-email.html', URL=app.config['URL'], **token)
         else:
             if client == nfd_android_client:
-                msg = Message("[NDN Certification] Request confirmation",
-                          sender = app.config['MAIL_FROM'],
-                          recipients = [user_email],
-                          body = render_template('nfd-android-token-email.txt', URL=app.config['URL'], **token),
-                          html = render_template('nfd-android-token-email.html', URL=app.config['URL'], **token))
-                mail.send(msg)
-                return json.dumps({"status": 200})
+                #msg = Message("[NDN Certification] Request confirmation",
+                #          sender = app.config['MAIL_FROM'],
+                #          recipients = [user_email],
+                #          body = render_template('nfd-android-token-email.txt', URL=app.config['URL'], **token),
+                #          html = render_template('nfd-android-token-email.html', URL=app.config['URL'], **token))
+                #mail.send(msg)
+                #return json.dumps({"status": 200})
+                return json.dumps({"status": 200, 'token': token['token'], "assigned_namespace": ndn.Name(params['assigned_namespace']).toUri(), 'organization': params['operator']['site_name']})
             else:
                 msg = Message("[NDN Certification] Request confirmation",
                           sender = app.config['MAIL_FROM'],
@@ -137,6 +138,8 @@ def show_help():
 
 @app.route('/cert-requests/submit/', methods = ['GET', 'POST'])
 def submit_request():
+    # TODO: haitao remove the condition that client is nfd_android_client as we have modified
+    # NFD-Android, those code is used any more.
     if request.method == 'GET':
         # Email and token (to authorize the request==validate email)
         client = request.args.get('client')
@@ -295,6 +298,7 @@ def submit_request():
             mail.send(msg)
 
         if client == nfd_android_client:
+            print (client)
             return json.dumps({"status": 200})
         else:
             return render_template('request-thankyou.html')
